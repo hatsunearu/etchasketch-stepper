@@ -31,6 +31,9 @@ int stepdelay = 100;
 long lasttime = 0;
 int instri = 0;
 
+//when etchisketch is running
+byte status = 0; //0: waiting for start, 1: running, 2: finished
+
 void setup() {
   stepper_init();
   Serial.begin(9600);
@@ -40,61 +43,82 @@ void setup() {
 }
 
 void loop() {
-  
-  if (lasttime + stepdelay < millis() && stepdelay != -1) {
-    
-    switch(instr[instri]) {
-      
-      /*
-        1 2 3
-        4 5 6
-        7 8 9
-      */
-      
-      case 1:
-        stepper_up();
-        stepper_left();
-        break;
-      case 2:
-        stepper_up();
-        break;
-      case 3:
-        stepper_right();
-        stepper_up();
-        break;
-      case 4:
-        stepper_left();
-        break;
-      case 6:
-        stepper_right();
-        break;
-      case 7:
-        stepper_down();
-        stepper_left();
-        break;
-      case 8:
-        stepper_down();
-        break;
-      case 9:
-        stepper_down();
-        stepper_right();
-        break;
-      case 0:
-        stepdelay = -1;
-        stepper_disable();
-        break;
-      default:
-        break;
-      
-    }
-    instri++;
-    if (instri >= instrlen)
-      stepdelay = -1;
-    
-    lasttime = millis();
-  }
-  
-}
+  switch(status){
+		//listen for start
+		case 0:
+			/*BeagleBone to Arduino Protocol
+			0: Run
+			*/
+			if(Serial.available() > '0'){
+				byte in = Serial.read();
+				switch(in){
+					case 0://Run
+						running = true;
+						break;
+				}
+			}
+			break;
+		//run etchisketch
+		case 1:
+			if (running && lasttime + stepdelay < millis() && status == 0) {
+				switch(instr[instri]) {
+					
+					/*
+						1 2 3
+						4 5 6
+						7 8 9
+					*/
+					
+					case 1:
+						stepper_up();
+						stepper_left();
+						break;
+					case 2:
+						stepper_up();
+						break;
+					case 3:
+						stepper_right();
+						stepper_up();
+						break;
+					case 4:
+						stepper_left();
+						break;
+					case 6:
+						stepper_right();
+						break;
+					case 7:
+						stepper_down();
+						stepper_left();
+						break;
+					case 8:
+						stepper_down();
+						break;
+					case 9:
+						stepper_down();
+						stepper_right();
+						break;
+					case 0:
+						stepdelay = -1;
+						stepper_disable();
+						break;
+					default:
+						break;
+					
+				}
+				instri++;
+				//ending situation
+				if (instri >= instrlen){
+					status=2;
+					Serial.write(0);//send finished signal to beagle board
+				}
+				
+				lasttime = millis();
+			}
+			break;
+		case 2:
+			//finished
+			break;
+	}
 
 void stepper_init() {
   pinMode(ENABLE_PIN, OUTPUT);
