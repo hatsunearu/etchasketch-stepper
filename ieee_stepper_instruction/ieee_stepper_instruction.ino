@@ -1,11 +1,21 @@
-//up/right = true
+//communication codes
+#define STEPPER_START 0x61
+#define STEPPER_ABORT 0x62
+#define STEPPER_PAUSE 0x63
+#define STEPPER_RESUME 0x64
 
-//stepper motor pin defines
-int ENABLE_PIN = 13;
-int STEP1_PIN = 11;
-int STEP2_PIN = 10;
-int DIR1_PIN = 9;
-int DIR2_PIN = 8;
+//pin definitions
+#define ENABLE_PIN 13
+#define STEP1_PIN 7
+#define STEP2_PIN 4
+#define DIR1_PIN 9
+#define DIR2_PIN 8
+#define PWM1_PIN 3 //pin assignments to the on-board headers
+#define PWM2_PIN 5
+#define PWM3_PIN 6
+
+//Defines stepper motor related methods
+#define STEP_DELAY 100
 
 //stepper motor prototypes
 void stepper_init();
@@ -24,102 +34,113 @@ void stepper_left();
 int instr[] = {2,1,1,4,1,1,4,7,8,8,8,8,8,8,8,8,8,8,9,8,9,6,6,6,6,6,3,3,3,3,3,3,3,2,1,2,2,1,2,2,2,2,2,2,2,2,2,3,2,2,2,3,2,2,3,2,3,2,3,2,3,3,3,6,3,6,9,8,8,8,8,7,8,8,8,8,7,8,8,8,7,8,8,8,7,8,7,8,8,7,8,7,8,7,8,7,8,8,8,9,9,6,9,6,6,6,6,6,3,6,6,2,2,2,2,2,2,2,2,2,2,2,3,3,2,3,3,3,6,6,6,6,8,6,9,8,8,8,8,7,8,7,8,7,7,7,7,7,4,7,4,8,8,6,8,9,6,6,9,3,6,6,6,6,3,6,3,6,6,6,2,2,2,2,2,2,2,2,2,2,2,2,3,2,3,2,3,3,3,3,6,6,6,6,9,9,9,9,8,8,7,8,7,7,7,7,8,7,4,7,7,7,4,7,7,8,9,9,9,6,6,6,6,6,6,6,6,3,6,3,6,3,2,2,2,2,2,2,2,2,2,2,2,3,2,2,2,3,3,3,6,3,6,6,6,6,9,9,9,8,8,7,8,8,7,8,7,8,7,4,8,4,7,7,7,7,4,4,8,9,9,6,9,6,6,6,6,6,6,3,6,6,6,6,6};
 int instrlen = 295;
 
-//step configuration
-int stepdelay = 100;
+boolean stepper_enabled = false;
 
 //misc global variable
-long lasttime = 0;
-int instri = 0;
-
-//when etchisketch is running
-byte status = 0; //0: waiting for start, 1: running, 2: finished
+long lasttime = 0; //last time an operation has occured. May need to be changed to last time of stepper operation 
+int instri = 0; //index of current instruction
 
 void setup() {
   stepper_init();
-  Serial.begin(9600);
+  Serial.begin(9600); //TODO change Serial to SoftwareSerial on different pin
   setdir_ch1(false);
   setdir_ch2(false);
-  stepper_enable();
+  stepper_disable();
 }
 
 void loop() {
-  switch(status){
-		//listen for start
-		case 0:
-			/*BeagleBone to Arduino Protocol
-			0: Run
-			*/
-			if(Serial.available() > '0'){
-				byte in = Serial.read();
-				switch(in){
-					case 0://Run
-						running = true;
-						break;
-				}
-			}
-			break;
-		//run etchisketch
-		case 1:
-			if (running && lasttime + stepdelay < millis() && status == 0) {
-				switch(instr[instri]) {
-					
-					/*
-						1 2 3
-						4 5 6
-						7 8 9
-					*/
-					
-					case 1:
-						stepper_up();
-						stepper_left();
-						break;
-					case 2:
-						stepper_up();
-						break;
-					case 3:
-						stepper_right();
-						stepper_up();
-						break;
-					case 4:
-						stepper_left();
-						break;
-					case 6:
-						stepper_right();
-						break;
-					case 7:
-						stepper_down();
-						stepper_left();
-						break;
-					case 8:
-						stepper_down();
-						break;
-					case 9:
-						stepper_down();
-						stepper_right();
-						break;
-					case 0:
-						stepdelay = -1;
-						stepper_disable();
-						break;
-					default:
-						break;
-					
-				}
-				instri++;
-				//ending situation
-				if (instri >= instrlen){
-					status=2;
-					Serial.write(0);//send finished signal to beagle board
-				}
-				
-				lasttime = millis();
-			}
-			break;
-		case 2:
-			//finished
-			break;
-	}
+  
+  if (Serial.available() > 0) {
+    char msg = Serial.read();
+    
+    switch (msg) {
+      //Stepper motor control messages
+      case STEPPER_START:
+        stepper_enabled = true;
+        stepper_enable();
+        instri = 0;
+        break;
+      case STEPPER_ABORT:
+        stepper_enabled = false;
+        stepper_disable();
+        instri = 0;
+        break;
+      case STEPPER_PAUSE:
+        stepper_enabled = false;
+        stepper_disable();
+        break;
+      case STEPPER_RESUME:
+        instri = 0;
+        stepper_enable();
+        break;
+      default:
+        break;
+      
+    }
+     
+  }
+  
+  
+  if (lasttime + STEP_DELAY < millis() && stepper_enabled) {
+    
+    switch(instr[instri]) {
+      
+      /*
+		the codes are shown by the following:
+        1 2 3
+        4 5 6
+        7 8 9
+		8 is directly down, 2 is directly up, and so on
+      */
+      
+      case 1:
+        stepper_up();
+        stepper_left();
+        break;
+      case 2:
+        stepper_up();
+        break;
+      case 3:
+        stepper_right();
+        stepper_up();
+        break;
+      case 4:
+        stepper_left();
+        break;
+      case 6:
+        stepper_right();
+        break;
+      case 7:
+        stepper_down();
+        stepper_left();
+        break;
+      case 8:
+        stepper_down();
+        break;
+      case 9:
+        stepper_down();
+        stepper_right();
+        break;
+      case 0:
+        stepper_disable();
+        break;
+      default:
+        break;
+      
+    }
+    instri++;
+    if (instri >= instrlen) { //if out of bounds
+      stepper_enabled = false;
+      instri = 0;
+      stepper_disable(); //stop everything
+    }
 
+    lasttime = millis(); //update last time the stepper motor has ran
+  }
+  
+}
+
+//begin stepper motor code (this should be in a seperate file)
 void stepper_init() {
   pinMode(ENABLE_PIN, OUTPUT);
   pinMode(STEP1_PIN, OUTPUT);
